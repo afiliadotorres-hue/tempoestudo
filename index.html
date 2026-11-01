@@ -172,7 +172,14 @@ a.sync[data-k="err"]::before{background:var(--danger)}
         <label class="f"><span class="label">Concurso</span><select id="selC"></select></label>
         <label class="f"><span class="label">Matéria</span><select id="selM"></select></label>
       </div>
-      <p class="note" id="lockNote" hidden>Para trocar de matéria, encerre a sessão atual. O tempo fica salvo.</p>
+      <div class="note stack" id="switchBox" hidden>
+        <p style="margin:0;color:var(--fg)" id="switchTxt"></p>
+        <div class="row">
+          <button class="primary sm" id="swFix"></button>
+          <button class="sm" id="swSplit"></button>
+          <button class="sm ghost" id="swCancel">Cancelar</button>
+        </div>
+      </div>
     </div>
 
     <div class="card clock">
@@ -416,19 +423,43 @@ function armed(btn,fn,label){
 const elapsed=()=>{const a=S.ativo;return a?a.acum+(a.seg?Date.now()-a.seg:0):0};
 const running=()=>!!(S.ativo&&S.ativo.seg);
 
-function start(){
+/* música que foi ligada pelo cronômetro: para sempre que o cronômetro deixar de rodar, seja qual for o motivo */
+let musicByTimer=false,wasRunning=null;
+function reconcileMusic(){
+  const r=running();
+  if(wasRunning&&!r&&S.pref.link){if(!audio.paused)audio.pause();wakeOff()}
+  wasRunning=r;
+}
+/* nenhuma sessão em andamento some sem ser salva: vira sessão no estado que vai substituí-la */
+function rescue(loc,target){
+  if(!loc)return false;
+  const nova=target.ativo;
+  if(nova&&nova.id===loc.id)return false;
+  if(target.sessoes.some(s=>s.id===loc.id))return false;
+  const d=loc.acum+(loc.seg?Date.now()-loc.seg:0);
+  if(d<60000)return false;
+  target.sessoes.push({id:loc.id,cId:loc.cId,mId:loc.mId,cNome:(C(loc.cId)||{}).nome,mNome:(M(loc.cId,loc.mId)||{}).nome,ini:loc.ini,fim:Date.now(),dur:d,upd:Date.now()});
+  target.dirty=target.dirty||{};target.dirty[loc.id]=1;
+  return true;
+}
+let starting=false;
+async function start(){
   if(!S.ativo){
+    if(starting)return;
+    /* antes de abrir sessão nova, confere se já há uma rodando em outro aparelho */
+    if(user){starting=true;$("#btnPlay").disabled=true;try{await syncNow()}catch(e){}starting=false;$("#btnPlay").disabled=false;
+      if(S.ativo){toast("Já existe uma sessão em andamento. Ela foi carregada aqui.");renderAll();return}}
     const {cId,mId}=S.pref;
     if(!M(cId,mId)){toast("Escolha o concurso e a matéria");return}
     const now=Date.now();
     S.ativo={id:uid(),cId,mId,ini:now,acum:0,seg:now,alertado:false};
   }else if(!S.ativo.seg){S.ativo.seg=Date.now()}
-  markCfg(); if(S.pref.link) musicPlay(); wakeOn(); unlockChime(); renderTimer(); renderSelects();
+  markCfg(); if(S.pref.link){musicPlay();musicByTimer=true} wakeOn(); unlockChime(); renderTimer(); renderSelects();
 }
 function pause(){
   const a=S.ativo;if(!a||!a.seg)return;
   a.acum+=Date.now()-a.seg;a.seg=null;markCfg();
-  if(S.pref.link) audio.pause(); wakeOff(); renderTimer();
+  if(S.pref.link) audio.pause(); musicByTimer=false; wakeOff(); renderTimer();
 }
 function stop(){
   const a=S.ativo;if(!a)return;
@@ -439,11 +470,12 @@ function stop(){
     toast(`Sessão salva: ${hm(d)} de ${(M(a.cId,a.mId)||{}).nome||"matéria"}`);
   }else toast("Sessão com menos de 1 minuto não foi salva");
   S.ativo=null;markCfg();
-  if(S.pref.link) audio.pause();
-  wakeOff(); renderAll();
+  if(S.pref.link) audio.pause(); musicByTimer=false;
+  wakeOff(); hideSwitch(); renderAll();
 }
 
 function renderTimer(){
+  reconcileMusic();
   const a=S.ativo, d=elapsed(), run=running();
   $("#time").textContent=hms(d);
   $("#time").classList.toggle("paused",!run);
@@ -459,7 +491,7 @@ function renderTimer(){
   if(meta&&a&&run&&!a.alertado&&d>=meta){a.alertado=true;save();blockDone(m)}
   $("#hdrHoje").textContent=hm(totalHoje());
 }
-setInterval(()=>{if(S.ativo)renderTimer()},500);
+setInterval(()=>{if(S.ativo)renderTimer();else reconcileMusic()},500);
 
 /* aviso de fim de bloco */
 let actx=null;
@@ -493,16 +525,52 @@ function fillM(sel,cId,val){
 }
 function renderSelects(){
   const a=S.ativo;
+  $("#selMeta").value=String(S.pref.meta);
+  if(!a)hideSwitch(true);
+  if(a&&!$("#switchBox").hidden)return; /* escolha de troca aberta: não mexe nos campos */
   fillC($("#selC"),a?a.cId:S.pref.cId);
   if(!a){S.pref.cId=$("#selC").value}
   fillM($("#selM"),a?a.cId:S.pref.cId,a?a.mId:S.pref.mId);
   if(!a){S.pref.mId=$("#selM").value}
-  $("#selC").disabled=$("#selM").disabled=!!a;
-  $("#lockNote").hidden=!a;
-  $("#selMeta").value=String(S.pref.meta);
 }
-$("#selC").onchange=e=>{S.pref.cId=e.target.value;S.pref.mId=null;save();renderSelects();renderTimer()};
-$("#selM").onchange=e=>{S.pref.mId=e.target.value;save();renderTimer()};
+/* troca de matéria com sessão em andamento */
+let pend=null;
+function hideSwitch(silent){pend=null;$("#switchBox").hidden=true;if(!silent&&S.ativo){$("#switchBox").hidden=true;renderSelects()}}
+function askSwitch(){
+  const a=S.ativo,c=$("#selC").value,m=$("#selM").value;
+  if(!a||!M(c,m))return;
+  if(c===a.cId&&m===a.mId){hideSwitch();return}
+  pend={c,m};
+  const d=elapsed(),novo=M(c,m).nome,velho=(M(a.cId,a.mId)||{}).nome||"matéria anterior";
+  if(d<60000){applyFix();return}
+  $("#switchTxt").innerHTML=`Mudar a sessão de <b>${esc(velho)}</b> para <b>${esc(novo)}</b>?`;
+  $("#swFix").textContent=`Corrigir: os ${hm(d)} vão para ${novo}`;
+  $("#swSplit").textContent=`Salvar ${hm(d)} em ${velho} e começar ${novo} do zero`;
+  $("#switchBox").hidden=false;
+}
+function applyFix(){
+  const a=S.ativo;if(!a||!pend)return;
+  a.cId=pend.c;a.mId=pend.m;S.pref.cId=pend.c;S.pref.mId=pend.m;
+  markCfg();toast("Matéria corrigida. O tempo continua contando.");hideSwitch();renderTimer();renderHoje();
+}
+function applySplit(){
+  const a=S.ativo;if(!a||!pend)return;
+  const d=elapsed(),run=running(),now=Date.now();
+  if(d>=60000){const s={id:a.id,cId:a.cId,mId:a.mId,cNome:(C(a.cId)||{}).nome,mNome:(M(a.cId,a.mId)||{}).nome,ini:a.ini,fim:now,dur:d};
+    S.sessoes.push(s);markSess(s);toast(`${hm(d)} salvos em ${s.mNome}`)}
+  S.ativo={id:uid(),cId:pend.c,mId:pend.m,ini:now,acum:0,seg:run?now:null,alertado:false};
+  S.pref.cId=pend.c;S.pref.mId=pend.m;
+  markCfg();hideSwitch();renderAll();
+}
+$("#swFix").onclick=applyFix;
+$("#swSplit").onclick=applySplit;
+$("#swCancel").onclick=()=>hideSwitch();
+$("#selC").onchange=e=>{
+  if(S.ativo){fillM($("#selM"),e.target.value);askSwitch();return}
+  S.pref.cId=e.target.value;S.pref.mId=null;save();renderSelects();renderTimer()};
+$("#selM").onchange=e=>{
+  if(S.ativo){askSwitch();return}
+  S.pref.mId=e.target.value;save();renderTimer()};
 $("#selMeta").onchange=e=>{S.pref.meta=+e.target.value;if(S.ativo)S.ativo.alertado=elapsed()>=S.pref.meta;save();renderTimer();
   try{if(S.pref.meta&&"Notification" in window&&Notification.permission==="default")Notification.requestPermission()}catch(e){}};
 $("#btnPlay").onclick=()=>running()?pause():start();
@@ -862,7 +930,15 @@ window.addEventListener("hashchange",route);
 
 function renderAll(){renderSelects();renderTimer();renderHoje();renderPlayer();route()}
 setInterval(()=>{if(running()&&!$("#v-estudar").hidden)renderHoje()},30000);
-window.addEventListener("storage",e=>{if(e.key===LS){try{S=JSON.parse(e.newValue)||S}catch(x){}renderAll()}});
+/* outra janela/aba do app gravou: adota o estado dela, sem perder a sessão que estava rodando aqui */
+window.addEventListener("storage",e=>{if(e.key!==LS)return;
+  let n=null;try{n=JSON.parse(e.newValue)}catch(x){}
+  if(!n||!Array.isArray(n.sessoes))return;
+  const loc=S.ativo;
+  const salvou=rescue(loc,n);
+  S=n;S.dirty=S.dirty||{};S.sync=S.sync||{};
+  if(salvou){save();schedSync()}
+  renderAll()});
 
 renderAll();loadTracks();initSb();
 if(S.ativo&&S.ativo.seg) toast("Sessão em andamento retomada");
