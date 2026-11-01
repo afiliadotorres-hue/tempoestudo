@@ -1,5 +1,3 @@
-Coloque aqui os arquivos de áudio (MP3/M4A) e liste cada um em faixas.json:
-[
-  {"arquivo": "lofi-estudo-1.mp3", "nome": "Lo-fi para estudar 1"},
-  {"arquivo": "piano-calmo.mp3", "nome": "Piano calmo"}
-]
+As faixas fixas ficam listadas em faixas.json. Para renomear, troque o campo "nome".
+Faixas longas são divididas em partes de 25 min (limite de 25 MB do upload pelo site do GitHub);
+o app toca as partes em sequência como uma faixa só.
