@@ -1,1 +1,38 @@
-[]
+[
+ {
+  "id": "instrumental-1",
+  "nome": "Instrumental 1",
+  "duracao": "2h17",
+  "partes": [
+   "instrumental-1-00.webm",
+   "instrumental-1-01.webm",
+   "instrumental-1-02.webm",
+   "instrumental-1-03.webm",
+   "instrumental-1-04.webm",
+   "instrumental-1-05.webm"
+  ]
+ },
+ {
+  "id": "instrumental-2",
+  "nome": "Instrumental 2",
+  "duracao": "2h18",
+  "partes": [
+   "instrumental-2-00.webm",
+   "instrumental-2-01.webm",
+   "instrumental-2-02.webm",
+   "instrumental-2-03.webm",
+   "instrumental-2-04.webm",
+   "instrumental-2-05.webm"
+  ]
+ },
+ {
+  "id": "instrumental-3",
+  "nome": "Instrumental 3",
+  "duracao": "1h00",
+  "partes": [
+   "instrumental-3-00.webm",
+   "instrumental-3-01.webm",
+   "instrumental-3-02.webm"
+  ]
+ }
+]
