@@ -1,0 +1,5 @@
+Coloque aqui os arquivos de áudio (MP3/M4A) e liste cada um em faixas.json:
+[
+  {"arquivo": "lofi-estudo-1.mp3", "nome": "Lo-fi para estudar 1"},
+  {"arquivo": "piano-calmo.mp3", "nome": "Piano calmo"}
+]
