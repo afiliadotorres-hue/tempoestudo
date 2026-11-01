@@ -93,6 +93,8 @@ button:disabled{opacity:.45;cursor:default}
 input[type=range]{accent-color:var(--accent);width:120px}
 .check{display:flex;gap:8px;align-items:flex-start;font-size:.9rem}
 .check input{margin-top:4px;accent-color:var(--accent)}
+.music-toggle{justify-content:center;align-items:center;margin-top:14px;font-size:.95rem;font-weight:500;cursor:pointer}
+.music-toggle input{margin:0;width:20px;height:20px}
 
 /* listas */
 .list{display:grid;gap:0}
@@ -139,13 +141,28 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border
 nav.tabs div{max-width:760px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
 nav.tabs a{color:var(--muted);text-decoration:none;text-align:center;padding:12px 4px 10px;font-size:.82rem;font-weight:600;border-top:3px solid transparent}
 nav.tabs a[aria-current="page"]{color:var(--fg);border-top-color:var(--accent)}
+.stack{display:grid;gap:10px}
+body.locked .wrap,body.locked nav.tabs{display:none}
+#gate{position:fixed;inset:0;z-index:20;background:var(--bg);overflow:auto;display:grid;place-items:center;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:calc(24px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-bottom,0px))}
+.gate-box{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 20px;display:grid;gap:14px}
+.gate-box h1{font-size:1.4rem}
+.gate-mark{width:52px;height:52px;border-radius:50%;background:conic-gradient(var(--accent) 0 240deg,var(--line) 240deg 360deg);
+  -webkit-mask:radial-gradient(circle,transparent 17px,#000 18px);mask:radial-gradient(circle,transparent 17px,#000 18px)}
+.gate-box button.primary{width:100%}
+.gate-box .row{justify-content:space-between}
+a.sync{color:var(--muted);text-decoration:none;font-size:.8rem}
+a.sync::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--line)}
+a.sync[data-k="ok"]::before{background:var(--accent)}
+a.sync[data-k="busy"]::before{background:var(--warn)}
+a.sync[data-k="err"]::before{background:var(--danger)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.9rem;z-index:9;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.2)}
 </style>
 
 <div class="wrap">
   <header class="top">
     <h1>Cronômetro de Estudos</h1>
-    <small>Hoje: <b id="hdrHoje">0h 00min</b></small>
+    <small><a href="#materias" class="sync" id="syncSt" data-k="off">sem sincronização</a> · Hoje: <b id="hdrHoje">0h 00min</b></small>
   </header>
 
   <!-- ESTUDAR -->
@@ -174,6 +191,7 @@ nav.tabs a[aria-current="page"]{color:var(--fg);border-top-color:var(--accent)}
         <button class="primary" id="btnPlay">Iniciar</button>
         <button id="btnStop" disabled>Encerrar e salvar</button>
       </div>
+      <label class="check music-toggle"><input type="checkbox" id="chkLink"> <span>Tocar música durante o estudo</span></label>
     </div>
 
     <div class="card">
@@ -197,7 +215,6 @@ nav.tabs a[aria-current="page"]{color:var(--fg);border-top-color:var(--accent)}
           <option value="repetir">Repetir a mesma faixa</option>
         </select></label>
       </div>
-      <label class="check"><input type="checkbox" id="chkLink"> <span>Música acompanha o cronômetro (iniciar, pausar e encerrar juntos)</span></label>
       <label class="check"><input type="checkbox" id="chkWake"> <span>Manter a tela ligada enquanto cronometra</span></label>
     </div>
 
@@ -254,6 +271,15 @@ nav.tabs a[aria-current="page"]{color:var(--fg);border-top-color:var(--accent)}
 
   <!-- MATÉRIAS -->
   <section class="view" id="v-materias" hidden>
+    <div class="card" id="syncCard">
+      <h2>Sincronização</h2>
+      <div id="sbLogged" class="stack" hidden>
+        <p style="margin:0">Conectado como <b id="sbWho"></b></p>
+        <p class="muted" style="margin:0" id="sbLast"></p>
+        <div class="row"><button class="primary" id="sbNow">Sincronizar agora</button><button id="sbOut">Sair</button></div>
+      </div>
+      <p class="note sbmsg" hidden></p>
+    </div>
     <p class="note">Edite os nomes direto nos campos. As sessões já registradas continuam no histórico mesmo se você remover uma matéria.</p>
     <div class="view" id="concList"></div>
     <div class="card">
@@ -290,6 +316,29 @@ nav.tabs a[aria-current="page"]{color:var(--fg);border-top-color:var(--accent)}
   </section>
 </div>
 
+<div id="gate" role="dialog" aria-modal="true" aria-labelledby="gateT">
+  <div class="gate-box">
+    <div class="gate-mark" aria-hidden="true"></div>
+    <h1 id="gateT">Cronômetro de Estudos</h1>
+    <p class="muted" style="margin:0" id="gateSub">Entre com sua conta para continuar.</p>
+    <p class="muted" style="margin:0" id="gateLoading">Carregando…</p>
+      <div id="sbSetup" class="stack" hidden>
+        <p class="muted" style="margin:0">Informe os dados do projeto no Supabase (Project Settings → API). Só é preciso uma vez em cada aparelho.</p>
+        <label class="f"><span class="label">Project URL</span><input type="text" id="sbUrl" placeholder="https://xxxx.supabase.co" autocomplete="off"></label>
+        <label class="f"><span class="label">anon public key</span><input type="text" id="sbKey" placeholder="eyJhbGciOi…" autocomplete="off"></label>
+        <div><button class="primary" id="sbSaveCfg">Salvar</button></div>
+      </div>
+      <form id="sbLogin" class="stack" hidden>
+                <div class="stack">
+          <label class="f"><span class="label">E-mail</span><input type="text" inputmode="email" id="sbEmail" autocomplete="username"></label>
+          <label class="f"><span class="label">Senha</span><input type="password" id="sbPass" autocomplete="current-password" style="font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px;width:100%"></label>
+        </div>
+        <div class="row"><button class="primary" type="submit" id="sbIn">Entrar</button><button type="button" id="sbUp">Criar conta</button>
+          <button type="button" class="sm ghost" id="sbReset">Trocar projeto</button></div>
+      </form>
+    <p class="note sbmsg" hidden></p>
+  </div>
+</div>
 <nav class="tabs" aria-label="Seções"><div>
   <a href="#estudar" data-v="estudar">Estudar</a>
   <a href="#historico" data-v="historico">Histórico</a>
@@ -298,9 +347,14 @@ nav.tabs a[aria-current="page"]{color:var(--fg);border-top-color:var(--accent)}
 </div></nav>
 <div class="toast" id="toast" hidden></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function(){
 "use strict";
+/* Projeto Supabase fixo (deixe vazio para informar pela tela em cada aparelho) */
+const SB_URL="https://dpjnwuuuxajvvmqgdmaz.supabase.co";
+const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwam53dXV1eGFqdnZtcWdkbWF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMDUxNjEsImV4cCI6MjEwODY4MTE2MX0.eFh700WkStm1wscwMxBJ_QXPEVTBucMp0htNsRXCF8Q";
+document.body.classList.add("locked");
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4);
@@ -309,7 +363,9 @@ const CORES=["#2f7fbf","#c56a2d","#8a5cc2","#2e9a6a","#c2416b","#8a8a2e","#3b9fb
 
 /* ---------- dados ---------- */
 function seed(){
-  const mk=(nome,cor,ms)=>({id:uid(),nome,cor,materias:ms.map(n=>({id:uid(),nome:n}))});
+  /* ids fixos a partir do nome, para os aparelhos novos já nascerem iguais */
+  const slug=s=>s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+  const mk=(nome,cor,ms)=>({id:slug(nome),nome,cor,materias:ms.map(n=>({id:slug(nome)+"_"+slug(n),nome:n}))});
   return {
     concursos:[
       mk("PC-AL","#2f7fbf",["Língua Portuguesa","Tecnologia da Informação","Contabilidade","Estatística","Raciocínio Lógico","Direito Constitucional","Direito Administrativo","Direito Penal","Direito Processual Penal","Legislação Penal Especial","Legislação Estadual (AL)","Direitos Humanos","Ética"]),
@@ -325,7 +381,14 @@ try{S=JSON.parse(localStorage.getItem(LS))}catch(e){}
 if(!S||!Array.isArray(S.concursos)) S=seed();
 S.pref=Object.assign(seed().pref,S.pref||{});
 S.sessoes=S.sessoes||[];
+S.cfgUpd=S.cfgUpd||0; S.sync=S.sync||{}; S.dirty=S.dirty||{};
+S.sessoes.forEach(s=>{if(!s.upd){s.upd=s.fim||s.ini;S.dirty[s.id]=1}});
+if(S.ativo&&!S.ativo.id)S.ativo.id=uid();
 function save(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
+const vivas=()=>S.sessoes.filter(s=>!s.apagada);
+/* marcam o que precisa subir para o Supabase */
+function markCfg(){S.cfgUpd=Date.now();save();schedSync()}
+function markSess(s){s.upd=Date.now();S.dirty[s.id]=1;save();schedSync()}
 const C=id=>S.concursos.find(c=>c.id===id);
 const M=(cId,mId)=>{const c=C(cId);return c&&c.materias.find(m=>m.id===mId)};
 const nomeC=s=>(C(s.cId)||{}).nome||s.cNome||"(concurso removido)";
@@ -358,23 +421,24 @@ function start(){
     const {cId,mId}=S.pref;
     if(!M(cId,mId)){toast("Escolha o concurso e a matéria");return}
     const now=Date.now();
-    S.ativo={cId,mId,ini:now,acum:0,seg:now,alertado:false};
+    S.ativo={id:uid(),cId,mId,ini:now,acum:0,seg:now,alertado:false};
   }else if(!S.ativo.seg){S.ativo.seg=Date.now()}
-  save(); if(S.pref.link) musicPlay(); wakeOn(); unlockChime(); renderTimer(); renderSelects();
+  markCfg(); if(S.pref.link) musicPlay(); wakeOn(); unlockChime(); renderTimer(); renderSelects();
 }
 function pause(){
   const a=S.ativo;if(!a||!a.seg)return;
-  a.acum+=Date.now()-a.seg;a.seg=null;save();
+  a.acum+=Date.now()-a.seg;a.seg=null;markCfg();
   if(S.pref.link) audio.pause(); wakeOff(); renderTimer();
 }
 function stop(){
   const a=S.ativo;if(!a)return;
   const d=elapsed();
   if(d>=60000){
-    S.sessoes.push({id:uid(),cId:a.cId,mId:a.mId,cNome:(C(a.cId)||{}).nome,mNome:(M(a.cId,a.mId)||{}).nome,ini:a.ini,fim:Date.now(),dur:d});
+    const s={id:a.id||uid(),cId:a.cId,mId:a.mId,cNome:(C(a.cId)||{}).nome,mNome:(M(a.cId,a.mId)||{}).nome,ini:a.ini,fim:Date.now(),dur:d};
+    S.sessoes.push(s);markSess(s);
     toast(`Sessão salva: ${hm(d)} de ${(M(a.cId,a.mId)||{}).nome||"matéria"}`);
   }else toast("Sessão com menos de 1 minuto não foi salva");
-  S.ativo=null;save();
+  S.ativo=null;markCfg();
   if(S.pref.link) audio.pause();
   wakeOff(); renderAll();
 }
@@ -450,7 +514,8 @@ let tracks=[],curUrl=null,loadedId=null;
 async function loadTracks(){
   let fixas=[];
   try{const r=await fetch("audio/faixas.json",{cache:"no-cache"});if(r.ok){const j=await r.json();
-    fixas=(Array.isArray(j)?j:[]).map(f=>({id:"f:"+f.arquivo,nome:f.nome||f.arquivo,src:"audio/"+encodeURIComponent(f.arquivo),fixa:true}))}}catch(e){}
+    fixas=(Array.isArray(j)?j:[]).map(f=>{const ps=f.partes||[f.arquivo];
+      return {id:"f:"+(f.id||ps[0]),nome:f.nome||ps[0],dur:f.duracao||"",srcs:ps.map(a=>"audio/"+encodeURIComponent(a)),fixa:true}})}}catch(e){}
   let locais=[];
   try{locais=(await idbAll()).map(f=>({id:"l:"+f.id,nome:f.nome,blob:f.blob,fixa:false}))}catch(e){}
   tracks=fixas.concat(locais);
@@ -458,29 +523,48 @@ async function loadTracks(){
   renderPlayer();renderTrackList();
 }
 const curTrack=()=>tracks.find(t=>t.id===S.pref.trackId);
+const nParts=t=>t&&t.srcs?t.srcs.length:1;
+/* faixas longas vêm em partes; a posição de cada faixa fica salva para continuar de onde parou */
+let part=0,seekTo=0;
+(function(){const p=S.pref.pos;if(p&&p.id===S.pref.trackId){part=p.part||0;seekTo=p.t||0}})();
+function savePos(){const t=curTrack();if(!t||!loadedId)return;S.pref.pos={id:t.id,part,t:Math.floor(audio.currentTime||0)};save()}
+function selectTrack(id){S.pref.trackId=id;part=0;seekTo=0;const p=S.pref.pos;if(p&&p.id===id){part=p.part||0;seekTo=p.t||0}save()}
 function loadCur(){
   const t=curTrack();if(!t)return false;
-  if(loadedId===t.id)return true;
+  part=Math.min(part,nParts(t)-1);
+  const key=t.id+"#"+part;
+  if(loadedId===key)return true;
   if(curUrl){URL.revokeObjectURL(curUrl);curUrl=null}
-  if(t.blob){curUrl=URL.createObjectURL(t.blob);audio.src=curUrl}else audio.src=t.src;
-  loadedId=t.id;return true;
+  if(t.blob){curUrl=URL.createObjectURL(t.blob);audio.src=curUrl}else audio.src=t.srcs[part];
+  if(seekTo>0){const s=seekTo;audio.addEventListener("loadedmetadata",()=>{try{audio.currentTime=s}catch(e){}},{once:true})}
+  seekTo=0;loadedId=key;return true;
 }
 function musicPlay(){
   if(!tracks.length){toast("Adicione faixas na aba Músicas");return}
   if(!loadCur())return;
-  audio.loop=S.pref.mode==="repetir";audio.volume=S.pref.vol;
+  audio.loop=S.pref.mode==="repetir"&&nParts(curTrack())===1;audio.volume=S.pref.vol;
   audio.play().catch(()=>toast("Toque em ▶ para liberar o som"));
 }
-function step(dir){
+function step(dir,force){
   if(!tracks.length)return;
   let i=tracks.findIndex(t=>t.id===S.pref.trackId);
   if(S.pref.mode==="aleatorio"&&tracks.length>1){let j;do{j=Math.floor(Math.random()*tracks.length)}while(j===i);i=j}
   else i=(i+dir+tracks.length)%tracks.length;
-  const was=!audio.paused;S.pref.trackId=tracks[i].id;save();loadCur();renderPlayer();
-  if(was||running())musicPlay();
+  const was=!audio.paused;savePos();
+  /* trocar de faixa pelos botões começa a nova faixa do início */
+  S.pref.trackId=tracks[i].id;part=0;seekTo=0;S.pref.pos=null;save();loadCur();renderPlayer();
+  if(was||force||running())musicPlay();
 }
-audio.addEventListener("ended",()=>step(1));
+audio.addEventListener("ended",()=>{
+  const t=curTrack();
+  if(part<nParts(t)-1){part++;loadCur();musicPlay()}
+  else if(S.pref.mode==="repetir"){part=0;loadedId=null;loadCur();musicPlay()}
+  else step(1,true);
+});
 ["play","pause"].forEach(ev=>audio.addEventListener(ev,renderPlayer));
+audio.addEventListener("pause",savePos);
+let lastPosSave=0;
+audio.addEventListener("timeupdate",()=>{const n=Date.now();if(n-lastPosSave>5000){lastPosSave=n;savePos()}});
 audio.addEventListener("error",()=>{if(audio.src)toast("Não consegui abrir esta faixa")});
 
 function renderPlayer(){
@@ -510,9 +594,10 @@ if("mediaSession" in navigator){
 $("#aPlay").onclick=()=>{unlockChime();audio.paused?musicPlay():audio.pause()};
 $("#aNext").onclick=()=>step(1);$("#aPrev").onclick=()=>step(-1);
 $("#vol").oninput=e=>{S.pref.vol=+e.target.value;audio.volume=S.pref.vol;save()};
-$("#selTrack").onchange=e=>{S.pref.trackId=e.target.value;save();const was=!audio.paused;loadCur();renderPlayer();if(was)musicPlay()};
+$("#selTrack").onchange=e=>{const was=!audio.paused;savePos();selectTrack(e.target.value);loadCur();renderPlayer();if(was)musicPlay()};
 $("#selMode").onchange=e=>{S.pref.mode=e.target.value;audio.loop=S.pref.mode==="repetir";save()};
-$("#chkLink").onchange=e=>{S.pref.link=e.target.checked;save()};
+$("#chkLink").onchange=e=>{S.pref.link=e.target.checked;save();
+  if(running()){S.pref.link?musicPlay():audio.pause()}};
 $("#chkWake").onchange=e=>{S.pref.wake=e.target.checked;save();S.pref.wake?wakeOn():wakeOff()};
 
 /* IndexedDB para faixas do aparelho */
@@ -533,16 +618,16 @@ $("#addTrack").onchange=async e=>{
 function renderTrackList(){
   const el=$("#trackList");
   if(!tracks.length){el.innerHTML=`<p class="empty">Nenhuma faixa ainda. Adicione arquivos do aparelho abaixo; as faixas fixas do site aparecem aqui quando forem incluídas.</p>`;return}
-  el.innerHTML=tracks.map(t=>`<div class="li"><span class="t">${esc(t.nome)} ${t.fixa?'<span class="muted">· fixa</span>':'<span class="muted">· deste aparelho</span>'}</span>
+  el.innerHTML=tracks.map(t=>`<div class="li"><span class="t">${esc(t.nome)} <span class="muted">${t.dur?"· "+esc(t.dur)+" ":""}${t.fixa?"· fixa":"· deste aparelho"}</span></span>
     <span class="row"><button class="sm" data-play="${esc(t.id)}">Tocar</button>${t.fixa?"":`<button class="sm danger" data-del="${esc(t.id)}">Remover</button>`}</span></div>`).join("");
-  el.querySelectorAll("[data-play]").forEach(b=>b.onclick=()=>{S.pref.trackId=b.dataset.play;save();loadCur();musicPlay();renderPlayer()});
+  el.querySelectorAll("[data-play]").forEach(b=>b.onclick=()=>{savePos();selectTrack(b.dataset.play);loadCur();musicPlay();renderPlayer()});
   el.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>armed(b,async()=>{
     const id=b.dataset.del;if(S.pref.trackId===id){audio.pause();loadedId=null}
     try{await idbDel(id.slice(2))}catch(e){}loadTracks()},"Remover?"));
 }
 
 /* ---------- hoje / histórico ---------- */
-function sessComAtiva(){const a=S.ativo;const l=S.sessoes.slice();if(a&&elapsed()>0)l.push({id:"_ativo",cId:a.cId,mId:a.mId,ini:a.ini,dur:elapsed(),ativa:true});return l}
+function sessComAtiva(){const a=S.ativo;const l=vivas();if(a&&elapsed()>0)l.push({id:"_ativo",cId:a.cId,mId:a.mId,ini:a.ini,dur:elapsed(),ativa:true});return l}
 const totalHoje=()=>{const t0=startOfDay(Date.now());return sessComAtiva().filter(s=>s.ini>=t0).reduce((x,s)=>x+s.dur,0)};
 function agrupa(list){const g={};list.forEach(s=>{const k=s.cId+"|"+s.mId;(g[k]=g[k]||{s,dur:0}).dur+=s.dur});return Object.values(g).sort((a,b)=>b.dur-a.dur)}
 function barras(el,list){
@@ -578,7 +663,7 @@ function renderHist(){
       <span class="m"><span class="dot" style="background:${corC(s.cId)}"></span> ${esc(nomeM(s))} <span class="muted">· ${esc(nomeC(s))}</span></span>
       <span class="d">${hm(s.dur)}</span><button class="sm ghost danger" data-ds="${s.id}" aria-label="Apagar sessão">✕</button></div>`});
   $("#sessList").innerHTML=html||`<p class="empty">Nenhuma sessão neste período.</p>`;
-  $("#sessList").querySelectorAll("[data-ds]").forEach(b=>b.onclick=()=>armed(b,()=>{S.sessoes=S.sessoes.filter(x=>x.id!==b.dataset.ds);save();renderAll()},"Apagar?"));
+  $("#sessList").querySelectorAll("[data-ds]").forEach(b=>b.onclick=()=>armed(b,()=>{const s=S.sessoes.find(x=>x.id===b.dataset.ds);if(s){s.apagada=true;markSess(s)}renderAll()},"Apagar?"));
   /* lançamento manual */
   const mc=$("#mC");fillC(mc,mc.value||S.pref.cId);fillM($("#mM"),mc.value,$("#mM").value);
   if(!$("#mData").value)$("#mData").value=dayKey(Date.now());
@@ -591,13 +676,13 @@ $("#mAdd").onclick=()=>{
   const [y,mo,d]=($("#mData").value||"").split("-").map(Number);const [h,mi]=($("#mIni").value||"08:00").split(":").map(Number);
   if(!M(cId,mId)||!y||!(dur>0)){toast("Preencha matéria, data e duração");return}
   const ini=new Date(y,mo-1,d,h,mi).getTime();
-  S.sessoes.push({id:uid(),cId,mId,cNome:C(cId).nome,mNome:M(cId,mId).nome,ini,fim:ini+dur,dur,manual:true});
-  save();toast("Sessão adicionada");renderAll();
+  const s={id:uid(),cId,mId,cNome:C(cId).nome,mNome:M(cId,mId).nome,ini,fim:ini+dur,dur,manual:true};
+  S.sessoes.push(s);markSess(s);toast("Sessão adicionada");renderAll();
 };
 
 /* ---------- matérias ---------- */
 function renderMaterias(){
-  const tot={};S.sessoes.forEach(s=>{tot[s.mId]=(tot[s.mId]||0)+s.dur});
+  const tot={};vivas().forEach(s=>{tot[s.mId]=(tot[s.mId]||0)+s.dur});
   const el=$("#concList");
   el.innerHTML=S.concursos.map(c=>`<div class="card" data-c="${c.id}">
     <div class="ctitle"><span class="dot" style="background:${c.cor};width:14px;height:14px"></span>
@@ -611,24 +696,24 @@ function renderMaterias(){
   </div>`).join("");
   el.querySelectorAll("[data-c]").forEach(card=>{
     const c=C(card.dataset.c);
-    card.querySelector("[data-rc]").onchange=e=>{const v=e.target.value.trim();if(v){c.nome=v;save();renderSelects();renderTimer()}};
+    card.querySelector("[data-rc]").onchange=e=>{const v=e.target.value.trim();if(v){c.nome=v;markCfg();renderSelects();renderTimer()}};
     card.querySelector("[data-dc]").onclick=e=>armed(e.target,()=>{
       if(S.ativo&&S.ativo.cId===c.id){toast("Encerre a sessão deste concurso antes");return}
-      S.concursos=S.concursos.filter(x=>x!==c);save();renderAll()},"Excluir mesmo?");
-    card.querySelectorAll("[data-cor]").forEach(b=>b.onclick=()=>{c.cor=b.dataset.cor;save();renderAll()});
+      S.concursos=S.concursos.filter(x=>x!==c);markCfg();renderAll()},"Excluir mesmo?");
+    card.querySelectorAll("[data-cor]").forEach(b=>b.onclick=()=>{c.cor=b.dataset.cor;markCfg();renderAll()});
     card.querySelectorAll("[data-m]").forEach(r=>{const m=c.materias.find(x=>x.id===r.dataset.m);
-      r.querySelector("[data-rm]").onchange=e=>{const v=e.target.value.trim();if(v){m.nome=v;save();renderSelects();renderTimer()}};
+      r.querySelector("[data-rm]").onchange=e=>{const v=e.target.value.trim();if(v){m.nome=v;markCfg();renderSelects();renderTimer()}};
       r.querySelector("[data-dm]").onclick=e=>armed(e.target,()=>{
         if(S.ativo&&S.ativo.mId===m.id){toast("Encerre a sessão desta matéria antes");return}
-        c.materias=c.materias.filter(x=>x!==m);save();renderAll()},"Remover?")});
-    const add=()=>{const i=card.querySelector("[data-nm]");const v=i.value.trim();if(!v)return;c.materias.push({id:uid(),nome:v});save();renderAll();
+        c.materias=c.materias.filter(x=>x!==m);markCfg();renderAll()},"Remover?")});
+    const add=()=>{const i=card.querySelector("[data-nm]");const v=i.value.trim();if(!v)return;c.materias.push({id:uid(),nome:v});markCfg();renderAll();
       const ni=document.getElementById("nm-"+c.id);ni&&ni.focus()};
     card.querySelector("[data-am]").onclick=add;
     card.querySelector("[data-nm]").onkeydown=e=>{if(e.key==="Enter")add()};
   });
 }
 $("#addC").onclick=()=>{const v=$("#novoC").value.trim();if(!v)return;
-  S.concursos.push({id:uid(),nome:v,cor:CORES[S.concursos.length%CORES.length],materias:[]});$("#novoC").value="";save();renderAll()};
+  S.concursos.push({id:uid(),nome:v,cor:CORES[S.concursos.length%CORES.length],materias:[]});$("#novoC").value="";markCfg();renderAll()};
 
 /* ---------- backup ---------- */
 const backupTxt=()=>JSON.stringify({app:"cronoEstudos",versao:1,exportado:new Date().toISOString(),concursos:S.concursos,sessoes:S.sessoes,pref:S.pref},null,1);
@@ -636,10 +721,134 @@ $("#bExp").onclick=()=>{try{const a=document.createElement("a");a.href=URL.creat
   a.download="backup-estudos-"+dayKey(Date.now())+".json";document.body.appendChild(a);a.click();a.remove();toast("Backup gerado")}catch(e){toast("Use Copiar backup")}};
 $("#bCopy").onclick=()=>{const t=backupTxt();navigator.clipboard.writeText(t).then(()=>toast("Backup copiado")).catch(()=>{$("#bPaste").value=t;$("#bPaste").closest("details").open=true;$("#bPaste").select();toast("Selecione e copie o texto")})};
 function restaura(txt){try{const j=JSON.parse(txt);if(!Array.isArray(j.concursos)||!Array.isArray(j.sessoes))throw 0;
-  S.concursos=j.concursos;S.sessoes=j.sessoes;S.pref=Object.assign(S.pref,j.pref||{});S.ativo=null;save();renderAll();toast("Backup restaurado")}catch(e){toast("Arquivo de backup inválido")}}
+  S.concursos=j.concursos;
+  /* junta com o que já existe, sem apagar sessões de outros aparelhos */
+  j.sessoes.forEach(s=>{if(!S.sessoes.some(x=>x.id===s.id)){S.sessoes.push(s);s.upd=Date.now();S.dirty[s.id]=1}});
+  S.pref=Object.assign(S.pref,j.pref||{});markCfg();renderAll();toast("Backup restaurado")}catch(e){toast("Arquivo de backup inválido")}}
 $("#bImpBtn").onclick=()=>$("#bImp").click();
 $("#bImp").onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(restaura);e.target.value=""};
 $("#bPasteGo").onclick=e=>armed(e.target,()=>restaura($("#bPaste").value),"Substituir dados atuais?");
+
+/* ---------- sincronização (Supabase) ---------- */
+let sb=null,user=null,busy=false,again=false,syncT=null;
+function sbCfg(){let c={};try{c=JSON.parse(localStorage.getItem(LS+".sb"))||{}}catch(e){}return {url:SB_URL||c.url||"",key:SB_KEY||c.key||""}}
+function setSt(k,txt){const el=$("#syncSt");el.dataset.k=k;el.textContent=txt}
+function sbMsg(t){document.querySelectorAll(".sbmsg").forEach(el=>{el.textContent=t||"";el.hidden=!t})}
+let authReady=false;
+function traduz(e){const m=(e&&e.message)||String(e||"");
+  if(/Invalid login/i.test(m))return "E-mail ou senha incorretos.";
+  if(/not confirmed/i.test(m))return "Confirme o e-mail pelo link que o Supabase enviou e depois toque em Entrar.";
+  if(/already registered/i.test(m))return "Este e-mail já tem conta. Use Entrar.";
+  if(/Password should be/i.test(m))return "A senha precisa ter pelo menos 6 caracteres.";
+  if(/relation .* does not exist|estudo_/i.test(m))return "As tabelas ainda não foram criadas. Rode o script SQL no Supabase.";
+  if(/fetch|network/i.test(m))return "Sem conexão com o Supabase agora. Os dados ficam guardados e sobem depois.";
+  return m;}
+function initSb(){
+  const {url,key}=sbCfg();
+  if(!window.supabase||!url||!key){sb=null;user=null;authReady=true;renderSync();return}
+  try{sb=window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:LS+".auth"}})}catch(e){sb=null;authReady=true;sbMsg("Endereço ou chave inválidos.");renderSync();return}
+  sb.auth.onAuthStateChange((ev,session)=>{const was=user&&user.id;user=session?session.user:null;authReady=true;renderSync();if(user&&user.id!==was)syncNow()});
+}
+function renderSync(){
+  const {url,key}=sbCfg();
+  const lib=!!window.supabase;
+  document.body.classList.toggle("locked",!user);
+  $("#gate").hidden=!!user;
+  $("#gateLoading").hidden=authReady||!lib;
+  $("#sbSetup").hidden=!lib||!!(url&&key);
+  $("#sbLogin").hidden=!lib||!authReady||!(url&&key)||!!user;
+  $("#gateSub").textContent=!lib?"Não foi possível carregar o login. Verifique a internet e recarregue a página."
+    :!(url&&key)?"Primeiro acesso neste aparelho: informe os dados do projeto.":"Entre com sua conta para continuar.";
+  $("#sbReset").hidden=!!(SB_URL&&SB_KEY);
+  $("#sbLogged").hidden=!user;
+  if(user){$("#sbWho").textContent=user.email;
+    $("#sbLast").textContent=S.sync.lastOk?"Última sincronização: "+new Date(S.sync.lastOk).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"Ainda não sincronizado"}
+  if(!window.supabase)setSt("off","sincronização indisponível");
+  else if(!user)setSt("off","sem sincronização");
+}
+function schedSync(){if(!user)return;clearTimeout(syncT);syncT=setTimeout(syncNow,1200)}
+const toRow=s=>({id:s.id,user_id:user.id,c_id:s.cId,m_id:s.mId,c_nome:s.cNome||null,m_nome:s.mNome||null,ini:s.ini,fim:s.fim||null,dur:s.dur,manual:!!s.manual,apagada:!!s.apagada,upd:s.upd||Date.now()});
+const fromRow=r=>({id:r.id,cId:r.c_id,mId:r.m_id,cNome:r.c_nome,mNome:r.m_nome,ini:+r.ini,fim:r.fim?+r.fim:null,dur:+r.dur,manual:r.manual,apagada:r.apagada,upd:+r.upd});
+const elapsedOf=a=>a?a.acum+(a.seg?Date.now()-a.seg:0):0;
+function remap(){S.sessoes.forEach(s=>{if(M(s.cId,s.mId))return;
+  const c=S.concursos.find(x=>x.nome===s.cNome);const m=c&&c.materias.find(x=>x.nome===s.mNome);
+  if(m){s.cId=c.id;s.mId=m.id;s.upd=Date.now();S.dirty[s.id]=1}})}
+async function syncNow(){
+  if(!sb||!user)return;
+  if(busy){again=true;return}
+  busy=true;setSt("busy","sincronizando…");let changed=false;
+  try{
+    /* 1. sessões novas/alteradas no servidor (com folga de 10 s) */
+    let since=S.sync.lastSrv?new Date(new Date(S.sync.lastSrv).getTime()-10000).toISOString():"1970-01-01T00:00:00Z",maxSrv=S.sync.lastSrv||null;
+    for(let pg=0;pg<50;pg++){
+      const {data,error}=await sb.from("estudo_sessoes").select("*").gt("srv",since).order("srv").limit(1000);
+      if(error)throw error;
+      for(const r of data){const s=fromRow(r);const l=S.sessoes.find(x=>x.id===s.id);
+        if(!l){S.sessoes.push(s);changed=true}else if(s.upd>(l.upd||0)){Object.assign(l,s);delete S.dirty[s.id];changed=true}
+        if(!maxSrv||r.srv>maxSrv)maxSrv=r.srv}
+      if(data.length<1000)break;since=data[data.length-1].srv;
+    }
+    S.sync.lastSrv=maxSrv;
+    /* 2. matérias + cronômetro em andamento: vence a alteração mais recente */
+    const {data:cfg,error:e2}=await sb.from("estudo_config").select("*").maybeSingle();
+    if(e2)throw e2;
+    if(cfg&&+cfg.upd>S.cfgUpd){
+      const loc=S.ativo,rem=cfg.ativo,wasRun=running();
+      if(loc&&(!rem||rem.id!==loc.id)&&!S.sessoes.some(s=>s.id===loc.id)&&elapsedOf(loc)>=60000){
+        const s={id:loc.id,cId:loc.cId,mId:loc.mId,cNome:(C(loc.cId)||{}).nome,mNome:(M(loc.cId,loc.mId)||{}).nome,ini:loc.ini,fim:Date.now(),dur:elapsedOf(loc),upd:Date.now()};
+        S.sessoes.push(s);S.dirty[s.id]=1;
+      }
+      S.concursos=Array.isArray(cfg.concursos)&&cfg.concursos.length?cfg.concursos:S.concursos;
+      S.ativo=rem?Object.assign({},rem,{alertado:!!(loc&&loc.id===rem.id&&loc.alertado)||elapsedOf(rem)>=+S.pref.meta}):null;
+      S.cfgUpd=+cfg.upd;remap();changed=true;
+      if(wasRun&&!running()){if(S.pref.link)audio.pause();wakeOff()}
+    }else if(!cfg||S.cfgUpd>+cfg.upd){
+      if(!S.cfgUpd)S.cfgUpd=Date.now();
+      const at=S.ativo?Object.assign({},S.ativo):null;if(at)delete at.alertado;
+      const {error}=await sb.from("estudo_config").upsert({user_id:user.id,concursos:S.concursos,ativo:at,upd:S.cfgUpd});
+      if(error)throw error;
+    }
+    /* 3. envia sessões pendentes */
+    const ids=Object.keys(S.dirty);
+    for(let i=0;i<ids.length;i+=500){
+      const rows=ids.slice(i,i+500).map(id=>S.sessoes.find(s=>s.id===id)).filter(Boolean).map(toRow);
+      if(rows.length){const {error}=await sb.from("estudo_sessoes").upsert(rows);if(error)throw error;
+        rows.forEach(r=>{const l=S.sessoes.find(s=>s.id===r.id);if(l&&(l.upd||0)<=r.upd)delete S.dirty[r.id]})}
+      ids.slice(i,i+500).forEach(id=>{if(!S.sessoes.some(s=>s.id===id))delete S.dirty[id]});
+    }
+    S.sync.lastOk=Date.now();save();
+    setSt("ok","sincronizado");sbMsg("");
+    if(changed)renderAll();else renderSync();
+  }catch(e){setSt("err","erro na sincronização");sbMsg(traduz(e));save()}
+  busy=false;if(again){again=false;syncNow()}
+}
+setInterval(()=>{if(user&&document.visibilityState==="visible")syncNow()},15000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")syncNow()});
+window.addEventListener("online",()=>syncNow());
+
+$("#sbSaveCfg").onclick=()=>{
+  const url=$("#sbUrl").value.trim().replace(/\/+$/,""),key=$("#sbKey").value.trim();
+  if(!/^https:\/\/.+/.test(url)||key.length<20){sbMsg("Confira a URL (começa com https://) e a chave anon.");return}
+  try{localStorage.setItem(LS+".sb",JSON.stringify({url,key}))}catch(e){}
+  sbMsg("");initSb();
+};
+$("#sbReset").onclick=()=>{try{localStorage.removeItem(LS+".sb")}catch(e){}sb=null;user=null;renderSync()};
+$("#sbLogin").onsubmit=async e=>{e.preventDefault();if(!sb)return;
+  const email=$("#sbEmail").value.trim(),password=$("#sbPass").value;
+  if(!email||!password){sbMsg("Preencha e-mail e senha.");return}
+  $("#sbIn").disabled=true;sbMsg("Entrando…");
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  $("#sbIn").disabled=false;sbMsg(error?traduz(error):"");if(!error)$("#sbPass").value="";
+};
+$("#sbUp").onclick=async()=>{if(!sb)return;
+  const email=$("#sbEmail").value.trim(),password=$("#sbPass").value;
+  if(!email||password.length<6){sbMsg("Preencha o e-mail e uma senha com pelo menos 6 caracteres.");return}
+  const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});
+  if(error){sbMsg(traduz(error));return}
+  sbMsg(data.session?"Conta criada.":"Conta criada. Abra o e-mail de confirmação do Supabase, toque no link e depois volte aqui e toque em Entrar.");
+};
+$("#sbNow").onclick=()=>syncNow();
+$("#sbOut").onclick=e=>armed(e.target,async()=>{try{await sb.auth.signOut()}catch(x){}user=null;S.sync={};save();renderSync()},"Sair mesmo?");
 
 /* ---------- abas ---------- */
 const VIEWS=["estudar","historico","materias","musicas"];
@@ -655,7 +864,7 @@ function renderAll(){renderSelects();renderTimer();renderHoje();renderPlayer();r
 setInterval(()=>{if(running()&&!$("#v-estudar").hidden)renderHoje()},30000);
 window.addEventListener("storage",e=>{if(e.key===LS){try{S=JSON.parse(e.newValue)||S}catch(x){}renderAll()}});
 
-renderAll();loadTracks();
+renderAll();loadTracks();initSb();
 if(S.ativo&&S.ativo.seg) toast("Sessão em andamento retomada");
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)&&!/claude|anthropic|usercontent/.test(location.hostname)){
   navigator.serviceWorker.register("sw.js").catch(()=>{});
