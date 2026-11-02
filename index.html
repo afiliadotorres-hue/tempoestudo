@@ -119,7 +119,7 @@ input[type=range]{accent-color:var(--accent);width:120px}
 .wd .col em{position:absolute;bottom:calc(var(--h) + 4px);left:0;right:0;font-style:normal;font-size:.68rem;font-family:var(--f-mono);color:var(--muted)}
 .wd small{font-size:.72rem;color:var(--muted)}
 .day-h{font-size:.78rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-top:12px}
-.sess{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:.9rem}
+.sess{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:.9rem}
 .sess .hr{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
 .sess .m{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sess .d{font-family:var(--f-mono)}
@@ -257,7 +257,7 @@ a.sync[data-k="err"]::before{background:var(--danger)}
     </div>
     <div class="card">
       <details>
-        <summary>Lançar sessão manualmente</summary>
+        <summary id="mSum">Lançar sessão manualmente</summary>
         <div style="display:grid;gap:10px">
           <div class="grid2">
             <label class="f"><span class="label">Concurso</span><select id="mC"></select></label>
@@ -266,7 +266,7 @@ a.sync[data-k="err"]::before{background:var(--danger)}
             <label class="f"><span class="label">Início</span><input type="time" id="mIni" value="08:00"></label>
             <label class="f"><span class="label">Duração (minutos)</span><input type="number" id="mDur" min="1" max="720" value="90"></label>
           </div>
-          <div><button class="primary" id="mAdd">Adicionar sessão</button></div>
+          <div class="row"><button class="primary" id="mAdd">Adicionar sessão</button><button class="ghost" id="mCancel" hidden>Cancelar edição</button></div>
         </div>
       </details>
     </div>
@@ -453,12 +453,22 @@ async function start(){
     if(!M(cId,mId)){toast("Escolha o concurso e a matéria");return}
     const now=Date.now();
     S.ativo={id:uid(),cId,mId,ini:now,acum:0,seg:now,alertado:false};
-  }else if(!S.ativo.seg){S.ativo.seg=Date.now()}
+  }else if(!S.ativo.seg){
+    const a=S.ativo,now=Date.now(),p=a.pausa||a.ini;
+    if(dayKey(p)!==dayKey(now)||now-p>3*3600000){
+      if(a.acum>=60000){
+        const s={id:a.id,cId:a.cId,mId:a.mId,cNome:(C(a.cId)||{}).nome,mNome:(M(a.cId,a.mId)||{}).nome,ini:a.ini,fim:p,dur:a.acum};
+        S.sessoes.push(s);markSess(s);
+        toast(`${hm(a.acum)} da pausa anterior foram salvos em ${new Date(a.ini).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}. Nova contagem começou agora.`);
+      }
+      S.ativo={id:uid(),cId:a.cId,mId:a.mId,ini:now,acum:0,seg:now,alertado:false};
+    }else{a.seg=now;delete a.pausa}
+  }
   markCfg(); if(S.pref.link){musicPlay();musicByTimer=true} wakeOn(); unlockChime(); renderTimer(); renderSelects();
 }
 function pause(){
   const a=S.ativo;if(!a||!a.seg)return;
-  a.acum+=Date.now()-a.seg;a.seg=null;markCfg();
+  a.acum+=Date.now()-a.seg;a.seg=null;a.pausa=Date.now();markCfg();
   if(S.pref.link) audio.pause(); musicByTimer=false; wakeOff(); renderTimer();
 }
 function stop(){
@@ -729,8 +739,9 @@ function renderHist(){
   ss.forEach(s=>{const k=dayKey(s.ini);if(k!==last){last=k;html+=`<div class="day-h">${new Date(s.ini).toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"})}</div>`}
     html+=`<div class="sess"><span class="hr">${new Date(s.ini).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>
       <span class="m"><span class="dot" style="background:${corC(s.cId)}"></span> ${esc(nomeM(s))} <span class="muted">· ${esc(nomeC(s))}</span></span>
-      <span class="d">${hm(s.dur)}</span><button class="sm ghost danger" data-ds="${s.id}" aria-label="Apagar sessão">✕</button></div>`});
+      <span class="d">${hm(s.dur)}</span><button class="sm ghost" data-es="${s.id}" aria-label="Editar sessão">✎</button><button class="sm ghost danger" data-ds="${s.id}" aria-label="Apagar sessão">✕</button></div>`});
   $("#sessList").innerHTML=html||`<p class="empty">Nenhuma sessão neste período.</p>`;
+  $("#sessList").querySelectorAll("[data-es]").forEach(b=>b.onclick=()=>editSess(b.dataset.es));
   $("#sessList").querySelectorAll("[data-ds]").forEach(b=>b.onclick=()=>armed(b,()=>{const s=S.sessoes.find(x=>x.id===b.dataset.ds);if(s){s.apagada=true;markSess(s)}renderAll()},"Apagar?"));
   /* lançamento manual */
   const mc=$("#mC");fillC(mc,mc.value||S.pref.cId);fillM($("#mM"),mc.value,$("#mM").value);
@@ -739,11 +750,25 @@ function renderHist(){
 document.querySelectorAll("#perChips .chip").forEach(b=>b.onclick=()=>{per=+b.dataset.p;renderHist()});
 $("#hFiltroC").onchange=renderHist;
 $("#mC").onchange=()=>fillM($("#mM"),$("#mC").value);
+let editId=null;
+function editSess(id){
+  const s=S.sessoes.find(x=>x.id===id);if(!s)return;
+  editId=id;const d=new Date(s.ini);
+  fillC($("#mC"),s.cId);fillM($("#mM"),$("#mC").value,s.mId);
+  $("#mData").value=dayKey(s.ini);$("#mIni").value=p2(d.getHours())+":"+p2(d.getMinutes());$("#mDur").value=Math.round(s.dur/60000);
+  $("#mSum").textContent="Editar sessão";$("#mAdd").textContent="Salvar alteração";$("#mCancel").hidden=false;
+  const det=$("#mSum").parentElement;det.open=true;det.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function endEdit(){editId=null;$("#mSum").textContent="Lançar sessão manualmente";$("#mAdd").textContent="Adicionar sessão";$("#mCancel").hidden=true}
+$("#mCancel").onclick=endEdit;
 $("#mAdd").onclick=()=>{
   const cId=$("#mC").value,mId=$("#mM").value,dur=Math.round(+$("#mDur").value*60000);
   const [y,mo,d]=($("#mData").value||"").split("-").map(Number);const [h,mi]=($("#mIni").value||"08:00").split(":").map(Number);
   if(!M(cId,mId)||!y||!(dur>0)){toast("Preencha matéria, data e duração");return}
   const ini=new Date(y,mo-1,d,h,mi).getTime();
+  if(editId){const s=S.sessoes.find(x=>x.id===editId);
+    if(s){Object.assign(s,{cId,mId,cNome:C(cId).nome,mNome:M(cId,mId).nome,ini,fim:ini+dur,dur});markSess(s);toast("Sessão alterada")}
+    endEdit();renderAll();return}
   const s={id:uid(),cId,mId,cNome:C(cId).nome,mNome:M(cId,mId).nome,ini,fim:ini+dur,dur,manual:true};
   S.sessoes.push(s);markSess(s);toast("Sessão adicionada");renderAll();
 };
